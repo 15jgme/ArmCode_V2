@@ -7,8 +7,12 @@ String inputString = "";
 String inputString2 = ""; // a String to hold incoming data
 bool stringComplete = false;  // whether the string is complete
 
-double lim = 90.0;  //MAX REACH LIMIT TO PREVENT INJURY
+double lim = 0.0;  //MAX REACH LIMIT TO PREVENT INJURY
 
+double read98 = 1598;
+double read90 = 1010.0;
+//double conv = 8.0/(1598.0-1010.0);
+double conv = 1.3605;
 
 //DISPLAY STUFF
 #include <SPI.h>
@@ -41,7 +45,7 @@ boolean led = true; int ledPin = 14; int swPin = 15; double inertia = 0; int pot
 int I = 1; double pos = 1; double posPrev = 0; double omega = 0; double omegaPrev = 0; double alpha = 0; 
 double alphaPrev = 0; double pEst = 0; double omegaEst = 0; double error = 0; double errorW = 0;
 int errCount = 0; double rea = 0; double motorSet = 0; double motorSet2 = 0; double del = 0;
-double diff = 0; double phi = 0.8; double linpos = 0; double linspeed = 0; double linaccel = 0;
+double diff = 0; double phi = 0.4; double linpos = 0; double linspeed = 0; double linaccel = 0;
 double linspeedPrev = 0; double linEst = 0; double linspeedEst = 0; int ticker = 0;
 
 int interv = 50;
@@ -67,7 +71,7 @@ void setup() {
     display.clearDisplay();
 
     analogReadResolution(12);
-    analogReference(INTERNAL);
+    //analogReference(INTERNAL);
     analogReadAveraging(4);
     
     pinMode(ledPin,OUTPUT);
@@ -91,9 +95,14 @@ void loop() {
       ticker = 1;
     }
     ticker++;
-    
-    pos = lowpassFilter.input( analogRead(potPin));
-    pos = phi * pos + (1-phi) * posPrev;
+    pos = 0;
+    for(int iavg=1;iavg<10;iavg++){
+      pos += analogRead(potPin)/10;
+    }
+    //pos = analogRead(potPin);
+    //pos = lowpassFilter.input( analogRead(potPin));
+    //pos = phi * pos + (1-phi) * posPrev;
+    pos = pos*conv*0.01-10;
     //Calculate innertia 
     linpos = lin(pos);
     
@@ -103,7 +112,7 @@ void loop() {
     
     linspeed = linDer(pos, omega);
 
-    if(abs(omega) < 200.0){
+    if(abs(omega) < 0){
       omega = 0;
     }
 
@@ -120,13 +129,14 @@ void loop() {
     pEst = posPrev + omegaPrev*(interv*pow(10,-3));
     linEst = lin(pEst);
     omegaEst = omegaPrev + alphaPrev*(interv*pow(10,-3));
-    linspeedEst = linDer(pos, omegaEst);
+    linspeedEst = linDer(pEst, omegaEst);
     error = (pos-pEst)/pos;
-    errorW = (linspeed-linspeedEst)/linspeed;
     
-    if (isnan(errorW) || isinf(errorW)) {
-      errorW = 0;
-    }
+    errorW = (linspeed-linspeedEst)/1;
+    
+   // if (isnan(errorW) || isinf(errorW)) {
+   //   errorW = 0;
+   // }
 
     motorSet2 += errorW; 
     //check switch to see if interupt is needed
@@ -135,8 +145,9 @@ void loop() {
       hold2();
     }
   
-    if(pos < 1000.0){
+    if(pos < 0.0){
       motorStop();
+      Serial.print("STOP");
     }
     else if(omega>0){
       direcSet(HIGH);
@@ -147,17 +158,16 @@ void loop() {
       analogWrite(motSpeedPin, abs(motorSet2));
     }
     
-    motorSet2 += errorW;
     
-    if(ticker%3== 0) //DON'T PRINT SERIAL DATA CONSTANTLY TO PREVENT OVERLOADING THE BUFFER
+    if(ticker%1== 0) //DON'T PRINT SERIAL DATA CONSTANTLY TO PREVENT OVERLOADING THE BUFFER
     {
       //Serial.print();
      // Serial.print(", ");
       //Serial.print(millis());
       Serial.print(", ");
       Serial.println(motorSet2);
-     // Serial.print(", ");
-      //Serial.print(errorW);
+      Serial.print(", ");
+      //Serial.println(linspeedEst);
      // Serial.println("");     
     }
 
@@ -281,7 +291,9 @@ void hold2()
     {
       displayP("BREAKING",1000);
       Serial.println("break");
+      motorSet2=0;
       break;
+
     }
     
     
@@ -332,9 +344,11 @@ void motorStop(){
 }
 
 double linDer(double theta,double dtheta){
+  dtheta *= 0.0174533;
   return (-10307.5*sin(theta))/(sqrt(20615*cos(theta)+28447.3));
 }
 
 double lin(double theta){
+  theta *= 0.0174533;
   return sqrt(pow((155+cos(theta)*66.5),2) + pow((66.5*sin(theta)),2));
 }
